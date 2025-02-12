@@ -7,6 +7,7 @@
 #define MAX(a, b) ((a) > (b)? (a) : (b))
 #define MIN(a, b) ((a) < (b)? (a) : (b))
 
+
 // smooth子函数: 高斯函数
 float gaussian(float x, float sigma) {
 	return exp(-0.5f * (x / sigma) * (x / sigma));
@@ -16,27 +17,25 @@ float gaussian(float x, float sigma) {
 // 双边滤波仅修正最后一个窗口的数据 空间域用左半个高斯滤波核
 // 返回的filtered_data是一个长度为5的数组（半个窗口大小）
 void bilateral_filter_1d_last(float* data, int length, float sigma_d, float sigma_r, float* filtered_data) {
-	int half_window = 5; //半窗口大小取固定值5 与异常值剔除函数outlier_filter_last的窗口大小对应
+	int window = 5; //窗口大小取固定值5 与异常值剔除函数outlier_filter_last的窗口大小对应
 
-	for (int i = 0; i < half_window; i++) {
+	for (int i = 0; i < window; i++) {
 		float sum_weights = 0.0f;
 		float sum_weighted_values = 0.0f;
-		int data_idx = length - half_window + i;
+		int data_idx = length - window + i; // where j = 0
 
-		for (int j = -half_window; j <= half_window; j++)
+		for (int k = 0; k < length; k++)
 		{
-			int index = data_idx + j;
-			if (index >= 0 && index < length) {
-				// 空间域权重
-				float spatial_weight = gaussian(j, sigma_d);
-				// 值域权重
-				float range_weight = gaussian(data[index] - data[data_idx], sigma_r);
-				// 总权重
-				float weight = spatial_weight * range_weight;
+			// 空间域权重
+			int j = k - data_idx;
+			float spatial_weight = gaussian(j, sigma_d);
+			// 值域权重
+			float range_weight = gaussian(data[k] - data[data_idx], sigma_r);
+			// 总权重
+			float weight = spatial_weight * range_weight;
 			
-				sum_weights += weight;
-				sum_weighted_values += weight * data[index];
-			}
+			sum_weights += weight;
+			sum_weighted_values += weight * data[k];
 		}
 
 		filtered_data[i] = sum_weighted_values / sum_weights;
@@ -168,7 +167,7 @@ float outlier_filter_last(float data[], int n) {
 // smoothed_data: 平滑后数据存放的地址
 void smooth(float* data, int length, float* smoothed_data) {
 	
-	bilateral_filter_1d(data, length, 3.0, 30.0, smoothed_data);
+	bilateral_filter_1d(data, length, 15.0, 10.0, smoothed_data);
 	outlier_filter(smoothed_data, length);
 }
 
@@ -178,9 +177,8 @@ void smooth(float* data, int length, float* smoothed_data) {
 float smooth_last(float* data, int length) {
 
 	float filtered_data[5] = {0.f, 0.f, 0.f, 0.f, 0.f};
-	bilateral_filter_1d_last(data, length, 3.0, 30.0, filtered_data);
+	bilateral_filter_1d_last(data, length, 15.0, 10.0, filtered_data);
 	return outlier_filter_last(filtered_data, 5);
-
 }
 
 // 使用示例1
@@ -293,7 +291,7 @@ int main() {
 // 使用示例3: ic、tc数据
 #if 0
 
-#define MAX_LINES 500  // 文件最大行数
+#define MAX_LINES 4000  // 文件最大行数
 
 int read_file_to_array(const char *filename, float *array, int max_lines) {
 	FILE *file = fopen(filename, "r");
@@ -314,10 +312,10 @@ int read_file_to_array(const char *filename, float *array, int max_lines) {
 int main() {
 
 	// 输入数据文件
-	const char *filename = "./tc.txt";
+	const char *filename = "./dat.txt";
 
 	// 输出文件
-	const char *filename_out = "./tc_smoothed.txt";
+	const char *filename_out = "./dat_smoothed.txt";
 	FILE *file = fopen(filename_out, "w");
 	fclose(file);
 
@@ -326,7 +324,7 @@ int main() {
 	int num_values = read_file_to_array(filename, data, MAX_LINES);
 
 	// 待平滑数据的长度 每sm_data_length个数据处理一次
-	int batch_sz = 15;
+	int batch_sz = 30;
 	int step = 1;
 
 	// 待平滑数据申请内存
@@ -411,9 +409,9 @@ int main() {
 #endif
 
 // 测试 读文件
-#if 1
+#if 01
 
-#define MAX_LINES 4000  // 文件最大行数
+#define MAX_LINES 5000  // 文件最大行数
 
 int read_file_to_array(const char *filename, float *array, int max_lines) {
 	FILE *file = fopen(filename, "r");
@@ -434,30 +432,34 @@ int read_file_to_array(const char *filename, float *array, int max_lines) {
 int main() {
 
 	// 输入数据文件
-	const char *filename = "./dat3.txt";
+	const char *filename = "./dat.txt";
+
+	// 输出文件
+	const char *filename_out = "./dat_smoothed.csv";
+	FILE *file = fopen(filename_out, "w");
 
 	// 读取数据
 	float data[MAX_LINES];
 	int num_values = read_file_to_array(filename, data, MAX_LINES);
 
-	float min_outlier_th = 300.f;
-
 	// 开始处理
 	int start = 0;
+	int dat_len = 15;
 	while (start < num_values) {
 
-		int end = start + 11;
+		int end = start + dat_len-1;
 
-		if (end > num_values) {
+		if (end >= num_values) {
 			return 0;
 		}
 
-		float smoothed = smooth_last(data + start, 11, min_outlier_th);
-		float raw = data[start + 10];
-		printf("%f,%f\n", raw, smoothed);
-		
+		float smoothed = smooth_last(data + start, dat_len);
+		float raw = data[end];
+		fprintf(file, "%f,%f\n", raw, smoothed);
+		//fprintf(file, "%f\n", smoothed);
 		start += 1;
 	}
+	fclose(file);
 
 	return 0;
 }
